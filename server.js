@@ -37,7 +37,8 @@ app.post('/webhook', (req, res) => {
 
     const message =
     req.body.userRequest.utterance;
-
+    console.log('입력값:', message);
+    
     let responseText = '';
 
     /*
