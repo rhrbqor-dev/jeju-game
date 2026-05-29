@@ -69,9 +69,15 @@ app.post('/webhook', (req, res) => {
     닉네임 입력 처리
     */
     else if (
-        users[userId]?.state ===
-        'waitingNickname'
-    ) {
+
+    users[userId]?.state ===
+    'waitingNickname'
+
+    &&
+
+    message.startsWith('닉네임 ')
+
+) {
 
         /*
         닉네임 중복 검사
@@ -102,8 +108,15 @@ app.post('/webhook', (req, res) => {
         */
         else {
 
-            users[userId].nickname =
-            message;
+            const nickname =
+
+message.replace(
+'닉네임 ',
+''
+);
+
+users[userId].nickname =
+nickname;
 
             users[userId].state =
             'playing';
@@ -114,7 +127,7 @@ app.post('/webhook', (req, res) => {
             Date.now();
 
             responseText =
-            `${message}님 게임 시작!\n\n` +
+            `${nickname}님 게임 시작!` +
             '첫 번째 장소로 이동하세요.';
         }
     }
