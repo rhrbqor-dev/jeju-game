@@ -5,73 +5,258 @@ const app = express();
 
 app.use(bodyParser.json());
 
-let rankings = [];
+/*
+사용자 저장 공간
+*/
+let users = {};
 
+/*
+시간 포맷 함수
+*/
+function formatTime(ms) {
+
+    let totalSeconds =
+    Math.floor(ms / 1000);
+
+    let minutes =
+    Math.floor(totalSeconds / 60);
+
+    let seconds =
+    totalSeconds % 60;
+
+    return `${minutes}분 ${seconds}초`;
+}
+
+/*
+Webhook
+*/
 app.post('/webhook', (req, res) => {
 
-    const userId = req.body.userRequest.user.id;
-    const message = req.body.userRequest.utterance;
+    const userId =
+    req.body.userRequest.user.id;
+
+    const message =
+    req.body.userRequest.utterance;
 
     let responseText = '';
 
-    // 게임 시작
+    /*
+    게임 시작
+    */
     if (message === '게임 시작') {
 
-        responseText =
-        '첫 번째 문제!\n제주 전통 물통 이름은?';
+        users[userId] = {
 
+            nickname: '',
+
+            state: 'waitingNickname',
+
+            stage: 0,
+
+            startTime: null,
+
+            endTime: null,
+
+            clearTime: null
+
+        };
+
+        responseText =
+        '사용할 닉네임을 입력해주세요.';
     }
 
-    // 정답
-    else if (message === '물허벅') {
+    /*
+    닉네임 입력 처리
+    */
+    else if (
+        users[userId]?.state ===
+        'waitingNickname'
+    ) {
 
-        rankings.push({
-            user: userId,
-            score: 100
-        });
+        /*
+        닉네임 중복 검사
+        */
+        let isDuplicate = false;
 
-        responseText =
-        '정답!\n100점 획득!';
+        for (const id in users) {
 
+            if (
+                users[id].nickname === message
+            ) {
+
+                isDuplicate = true;
+            }
+        }
+
+        /*
+        중복일 경우
+        */
+        if (isDuplicate) {
+
+            responseText =
+            '이미 사용중인 닉네임입니다.\n다른 닉네임을 입력해주세요.';
+        }
+
+        /*
+        사용 가능
+        */
+        else {
+
+            users[userId].nickname =
+            message;
+
+            users[userId].state =
+            'playing';
+
+            users[userId].stage = 1;
+
+            users[userId].startTime =
+            Date.now();
+
+            responseText =
+            `${message}님 게임 시작!\n\n` +
+            '첫 번째 장소로 이동하세요.';
+        }
     }
 
-    // 랭킹
+    /*
+    1번 완료
+    */
+    else if (
+        message === '1번 완료'
+    ) {
+
+        users[userId].stage = 2;
+
+        responseText =
+        '1단계 완료!';
+    }
+
+    /*
+    2번 완료
+    */
+    else if (
+        message === '2번 완료'
+    ) {
+
+        users[userId].stage = 3;
+
+        responseText =
+        '2단계 완료!';
+    }
+
+    /*
+    최종 완료
+    */
+    else if (
+        message === '게임 종료'
+    ) {
+
+        users[userId].endTime =
+        Date.now();
+
+        users[userId].clearTime =
+
+            users[userId].endTime
+            -
+            users[userId].startTime;
+
+        responseText =
+
+            `🎉 게임 완료!\n\n` +
+
+            `플레이 시간: ` +
+
+            formatTime(
+                users[userId].clearTime
+            );
+    }
+
+    /*
+    랭킹
+    */
     else if (message === '랭킹') {
 
-        responseText = '🏆 랭킹\n';
+        responseText =
+        '🏆 실시간 랭킹\n\n';
 
-        rankings.forEach((r, index) => {
+        let rankingArray =
+        Object.values(users);
 
-            responseText +=
-            `${index + 1}위 - ${r.score}점\n`;
+        /*
+        완료한 사람만
+        */
+        rankingArray =
+        rankingArray.filter(user =>
 
+            user.clearTime !== null
+
+        );
+
+        /*
+        시간 짧은 순 정렬
+        */
+        rankingArray.sort((a, b) => {
+
+            return a.clearTime -
+                   b.clearTime;
         });
 
+        /*
+        TOP 10 출력
+        */
+        rankingArray
+        .slice(0, 10)
+        .forEach((user, index) => {
+
+            responseText +=
+
+                `${index + 1}위 ` +
+
+                `${user.nickname} - ` +
+
+                `${formatTime(
+                    user.clearTime
+                )}\n`;
+        });
     }
 
+    /*
+    기본 응답
+    */
     else {
 
         responseText =
-        '다시 입력해주세요.';
+        '진행중인 게임이 없습니다.';
     }
 
+    /*
+    카카오 응답
+    */
     res.json({
+
         version: '2.0',
+
         template: {
+
             outputs: [
+
                 {
+
                     simpleText: {
+
                         text: responseText
                     }
                 }
             ]
         }
     });
-
 });
 
+/*
+서버 실행
+*/
 app.listen(3000, () => {
 
     console.log('서버 실행중');
-
 });
