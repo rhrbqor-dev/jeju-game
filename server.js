@@ -1,333 +1,167 @@
-```javascript
 const express = require('express');
 const bodyParser = require('body-parser');
-const admin = require('firebase-admin');
 
 const app = express();
-
 app.use(bodyParser.json());
 
 /*
-Firebase 연결
-*/
-const serviceAccount =
-require('./firebase-key.json');
-
-admin.initializeApp({
-
-    credential:
-    admin.credential.cert(serviceAccount)
-});
-
-const db = admin.firestore();
-
-/*
-유저 저장소
+유저 데이터 (임시 저장)
 */
 let users = {};
 
 /*
-시간 포맷 함수
+시간 포맷 함수 (오류 없는 안전 버전)
 */
 function formatTime(ms) {
 
-    let totalSeconds =
-    Math.floor(ms / 1000);
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
 
-    let minutes =
-    Math.floor(totalSeconds / 60);
-
-    let seconds =
-    totalSeconds % 60;
-
-    return `${minutes}분 ${seconds}초`;
+    return minutes + '분 ' + seconds + '초';
 }
 
 /*
-유저 저장 함수
-*/
-async function saveUser(userId) {
-
-    await db
-    .collection('users')
-    .doc(userId)
-    .set(users[userId]);
-}
-
-/*
-기본 페이지
+홈
 */
 app.get('/', (req, res) => {
-
-    res.send('서버 정상 실행중');
+    res.send('Jeju Game Server Running');
 });
 
 /*
 카카오 webhook
 */
-app.post('/webhook', async (req, res) => {
+app.post('/webhook', (req, res) => {
 
-    try {
+    const userId = req.body.userRequest.user.id;
+    const message = req.body.userRequest.utterance;
 
-        const userId =
-        req.body.userRequest.user.id;
+    console.log('입력값:', message);
 
-        const message =
-        req.body.userRequest.utterance;
+    let responseText = '';
 
-        console.log('입력값:', message);
+    /*
+    1. 게임 시작
+    */
+    if (message === '게임 시작') {
 
-        let responseText = '';
+        users[userId] = {
+            nickname: null,
+            state: 'WAIT_NICKNAME',
+            startTime: null,
+            endTime: null,
+            playTime: null
+        };
 
-        /*
-        게임 시작
-        */
-        if (message === '게임 시작') {
+        responseText =
+            '게임 시작!\n닉네임을 입력하세요.\n예: 닉네임 바당';
+    }
 
-            users[userId] = {
+    /*
+    2. 닉네임 입력 처리
+    */
+    else if (
+        users[userId] &&
+        users[userId].state === 'WAIT_NICKNAME' &&
+        message.startsWith('닉네임 ')
+    ) {
 
-                nickname: '',
-
-                state:
-                'waitingNickname',
-
-                startTime: null,
-
-                endTime: null,
-
-                clearTime: null
-            };
-
-            responseText =
-
-            '사용할 닉네임을 입력해주세요.\n\n' +
-
-            '예시:\n' +
-
-            '닉네임 바당';
-        }
+        const nickname = message.replace('닉네임 ', '');
 
         /*
-        닉네임 입력
+        중복 검사
         */
-        else if (
+        let duplicate = false;
 
-            users[userId]?.state ===
-            'waitingNickname'
-
-            &&
-
-            message.startsWith('닉네임 ')
-
-        ) {
-
-            const nickname =
-
-            message.replace(
-                '닉네임 ',
-                ''
-            );
-
-            /*
-            중복 검사
-            */
-            let isDuplicate = false;
-
-            for (const id in users) {
-
-                if (
-
-                    users[id].nickname ===
-                    nickname
-
-                ) {
-
-                    isDuplicate = true;
-                }
-            }
-
-            /*
-            중복이면
-            */
-            if (isDuplicate) {
-
-                responseText =
-
-                '이미 사용중인 닉네임입니다.';
-            }
-
-            /*
-            중복 아니면
-            */
-            else {
-
-                users[userId].nickname =
-                nickname;
-
-                users[userId].state =
-                'playing';
-
-                users[userId].startTime =
-                Date.now();
-
-                await saveUser(userId);
-
-                responseText =
-
-                `${nickname}님 게임 시작!`;
+        for (const id in users) {
+            if (users[id].nickname === nickname) {
+                duplicate = true;
             }
         }
 
-        /*
-        1단계 완료
-        */
-        else if (message === '1번 완료') {
-
-            responseText =
-            '1단계 완료!';
+        if (duplicate) {
+            responseText = '이미 존재하는 닉네임입니다.';
         }
 
-        /*
-        게임 종료
-        */
-        else if (message === '게임 종료') {
-
-            users[userId].endTime =
-            Date.now();
-
-            users[userId].clearTime =
-
-                users[userId].endTime
-
-                -
-
-                users[userId].startTime;
-
-            await saveUser(userId);
-
-            responseText =
-
-                '🎉 게임 완료!\n\n' +
-
-                '플레이 시간 : ' +
-
-                formatTime(
-                    users[userId].clearTime
-                );
-        }
-
-        /*
-        랭킹
-        */
-        else if (message === '랭킹') {
-
-            responseText =
-            '🏆 실시간 랭킹\n\n';
-
-            let rankingArray =
-            Object.values(users);
-
-            rankingArray =
-
-            rankingArray.filter(user =>
-
-                user.clearTime !== null
-            );
-
-            rankingArray.sort((a, b) => {
-
-                return a.clearTime
-                -
-                b.clearTime;
-            });
-
-            rankingArray
-            .slice(0, 10)
-            .forEach((user, index) => {
-
-                responseText +=
-
-                    `${index + 1}위 ` +
-
-                    `${user.nickname} - ` +
-
-                    `${formatTime(
-                        user.clearTime
-                    )}\n`;
-            });
-        }
-
-        /*
-        기본 응답
-        */
         else {
 
+            users[userId].nickname = nickname;
+            users[userId].state = 'PLAYING';
+            users[userId].startTime = Date.now();
+
             responseText =
-
-            '인식할 수 없는 명령입니다.';
+                nickname + '님 게임 시작!';
         }
+    }
 
-        /*
-        카카오 응답
-        */
-        res.json({
+    /*
+    3. 게임 종료
+    */
+    else if (message === '게임 종료') {
 
-            version: '2.0',
+        if (users[userId]) {
 
-            template: {
+            users[userId].endTime = Date.now();
 
-                outputs: [
+            users[userId].playTime =
+                users[userId].endTime -
+                users[userId].startTime;
 
-                    {
+            responseText =
+                '게임 종료!\n' +
+                '기록: ' +
+                formatTime(users[userId].playTime);
+        }
+    }
 
-                        simpleText: {
+    /*
+    4. 랭킹
+    */
+    else if (message === '랭킹') {
 
-                            text: responseText
-                        }
-                    }
-                ]
-            }
+        let list = Object.values(users)
+            .filter(u => u.playTime)
+            .sort((a, b) => a.playTime - b.playTime);
+
+        responseText = '🏆 랭킹\n\n';
+
+        list.slice(0, 10).forEach((u, i) => {
+            responseText +=
+                (i + 1) + '위 ' +
+                u.nickname + ' - ' +
+                formatTime(u.playTime) + '\n';
         });
     }
 
-    catch(error) {
-
-        console.log(error);
-
-        res.json({
-
-            version: '2.0',
-
-            template: {
-
-                outputs: [
-
-                    {
-
-                        simpleText: {
-
-                            text:
-                            '서버 오류 발생'
-                        }
-                    }
-                ]
-            }
-        });
+    /*
+    기본 응답
+    */
+    else {
+        responseText = '명령을 이해하지 못했습니다.';
     }
+
+    /*
+    카카오 응답
+    */
+    res.json({
+        version: "2.0",
+        template: {
+            outputs: [
+                {
+                    simpleText: {
+                        text: responseText
+                    }
+                }
+            ]
+        }
+    });
 });
 
 /*
-서버 실행
+서버 실행 (Render 대응)
 */
-const PORT =
-process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-
-    console.log(
-
-        `서버 실행중 : ${PORT}`
-    );
+    console.log('서버 실행중:', PORT);
 });
-```
-
