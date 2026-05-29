@@ -1,12 +1,28 @@
+```javascript
 const express = require('express');
 const bodyParser = require('body-parser');
+const admin = require('firebase-admin');
 
 const app = express();
 
 app.use(bodyParser.json());
 
 /*
-사용자 저장 공간
+Firebase 연결
+*/
+const serviceAccount =
+require('./firebase-key.json');
+
+admin.initializeApp({
+
+    credential:
+    admin.credential.cert(serviceAccount)
+});
+
+const db = admin.firestore();
+
+/*
+유저 저장소
 */
 let users = {};
 
@@ -28,249 +44,290 @@ function formatTime(ms) {
 }
 
 /*
-Webhook
+유저 저장 함수
 */
-app.post('/webhook', (req, res) => {
+async function saveUser(userId) {
 
-    const userId =
-    req.body.userRequest.user.id;
+    await db
+    .collection('users')
+    .doc(userId)
+    .set(users[userId]);
+}
 
-    const message =
-    req.body.userRequest.utterance;
-    console.log('입력값:', message);
-    
-    let responseText = '';
+/*
+기본 페이지
+*/
+app.get('/', (req, res) => {
 
-    /*
-    게임 시작
-    */
-    if (message === '게임 시작') {
+    res.send('서버 정상 실행중');
+});
 
-        users[userId] = {
+/*
+카카오 webhook
+*/
+app.post('/webhook', async (req, res) => {
 
-            nickname: '',
+    try {
 
-            state: 'waitingNickname',
+        const userId =
+        req.body.userRequest.user.id;
 
-            stage: 0,
+        const message =
+        req.body.userRequest.utterance;
 
-            startTime: null,
+        console.log('입력값:', message);
 
-            endTime: null,
-
-            clearTime: null
-
-        };
-
-        responseText =
-        '사용할 닉네임을 입력해주세요.';
-    }
-
-    /*
-    닉네임 입력 처리
-    */
-    else if (
-
-    users[userId]?.state ===
-    'waitingNickname'
-
-    &&
-
-    message.startsWith('닉네임 ')
-
-) {
+        let responseText = '';
 
         /*
-        닉네임 중복 검사
+        게임 시작
         */
-        let isDuplicate = false;
+        if (message === '게임 시작') {
 
-        for (const id in users) {
+            users[userId] = {
 
-            if (
-                users[id].nickname === message
-            ) {
+                nickname: '',
 
-                isDuplicate = true;
+                state:
+                'waitingNickname',
+
+                startTime: null,
+
+                endTime: null,
+
+                clearTime: null
+            };
+
+            responseText =
+
+            '사용할 닉네임을 입력해주세요.\n\n' +
+
+            '예시:\n' +
+
+            '닉네임 바당';
+        }
+
+        /*
+        닉네임 입력
+        */
+        else if (
+
+            users[userId]?.state ===
+            'waitingNickname'
+
+            &&
+
+            message.startsWith('닉네임 ')
+
+        ) {
+
+            const nickname =
+
+            message.replace(
+                '닉네임 ',
+                ''
+            );
+
+            /*
+            중복 검사
+            */
+            let isDuplicate = false;
+
+            for (const id in users) {
+
+                if (
+
+                    users[id].nickname ===
+                    nickname
+
+                ) {
+
+                    isDuplicate = true;
+                }
+            }
+
+            /*
+            중복이면
+            */
+            if (isDuplicate) {
+
+                responseText =
+
+                '이미 사용중인 닉네임입니다.';
+            }
+
+            /*
+            중복 아니면
+            */
+            else {
+
+                users[userId].nickname =
+                nickname;
+
+                users[userId].state =
+                'playing';
+
+                users[userId].startTime =
+                Date.now();
+
+                await saveUser(userId);
+
+                responseText =
+
+                `${nickname}님 게임 시작!`;
             }
         }
 
         /*
-        중복일 경우
+        1단계 완료
         */
-        if (isDuplicate) {
+        else if (message === '1번 완료') {
 
             responseText =
-            '이미 사용중인 닉네임입니다.\n다른 닉네임을 입력해주세요.';
+            '1단계 완료!';
         }
 
         /*
-        사용 가능
+        게임 종료
+        */
+        else if (message === '게임 종료') {
+
+            users[userId].endTime =
+            Date.now();
+
+            users[userId].clearTime =
+
+                users[userId].endTime
+
+                -
+
+                users[userId].startTime;
+
+            await saveUser(userId);
+
+            responseText =
+
+                '🎉 게임 완료!\n\n' +
+
+                '플레이 시간 : ' +
+
+                formatTime(
+                    users[userId].clearTime
+                );
+        }
+
+        /*
+        랭킹
+        */
+        else if (message === '랭킹') {
+
+            responseText =
+            '🏆 실시간 랭킹\n\n';
+
+            let rankingArray =
+            Object.values(users);
+
+            rankingArray =
+
+            rankingArray.filter(user =>
+
+                user.clearTime !== null
+            );
+
+            rankingArray.sort((a, b) => {
+
+                return a.clearTime
+                -
+                b.clearTime;
+            });
+
+            rankingArray
+            .slice(0, 10)
+            .forEach((user, index) => {
+
+                responseText +=
+
+                    `${index + 1}위 ` +
+
+                    `${user.nickname} - ` +
+
+                    `${formatTime(
+                        user.clearTime
+                    )}\n`;
+            });
+        }
+
+        /*
+        기본 응답
         */
         else {
 
-            const nickname =
-
-message.replace(
-'닉네임 ',
-''
-);
-
-users[userId].nickname =
-nickname;
-
-            users[userId].state =
-            'playing';
-
-            users[userId].stage = 1;
-
-            users[userId].startTime =
-            Date.now();
-
             responseText =
-            `${nickname}님 게임 시작!` +
-            '첫 번째 장소로 이동하세요.';
+
+            '인식할 수 없는 명령입니다.';
         }
-    }
-
-    /*
-    1번 완료
-    */
-    else if (
-        message === '1번 완료'
-    ) {
-
-        users[userId].stage = 2;
-
-        responseText =
-        '1단계 완료!';
-    }
-
-    /*
-    2번 완료
-    */
-    else if (
-        message === '2번 완료'
-    ) {
-
-        users[userId].stage = 3;
-
-        responseText =
-        '2단계 완료!';
-    }
-
-    /*
-    최종 완료
-    */
-    else if (
-        message === '게임 종료'
-    ) {
-
-        users[userId].endTime =
-        Date.now();
-
-        users[userId].clearTime =
-
-            users[userId].endTime
-            -
-            users[userId].startTime;
-
-        responseText =
-
-            `🎉 게임 완료!\n\n` +
-
-            `플레이 시간: ` +
-
-            formatTime(
-                users[userId].clearTime
-            );
-    }
-
-    /*
-    랭킹
-    */
-    else if (message === '랭킹') {
-
-        responseText =
-        '🏆 실시간 랭킹\n\n';
-
-        let rankingArray =
-        Object.values(users);
 
         /*
-        완료한 사람만
+        카카오 응답
         */
-        rankingArray =
-        rankingArray.filter(user =>
+        res.json({
 
-            user.clearTime !== null
+            version: '2.0',
 
-        );
+            template: {
 
-        /*
-        시간 짧은 순 정렬
-        */
-        rankingArray.sort((a, b) => {
+                outputs: [
 
-            return a.clearTime -
-                   b.clearTime;
-        });
+                    {
 
-        /*
-        TOP 10 출력
-        */
-        rankingArray
-        .slice(0, 10)
-        .forEach((user, index) => {
+                        simpleText: {
 
-            responseText +=
-
-                `${index + 1}위 ` +
-
-                `${user.nickname} - ` +
-
-                `${formatTime(
-                    user.clearTime
-                )}\n`;
-        });
-    }
-
-    /*
-    기본 응답
-    */
-    else {
-
-        responseText =
-        '진행중인 게임이 없습니다.';
-    }
-
-    /*
-    카카오 응답
-    */
-    res.json({
-
-        version: '2.0',
-
-        template: {
-
-            outputs: [
-
-                {
-
-                    simpleText: {
-
-                        text: responseText
+                            text: responseText
+                        }
                     }
-                }
-            ]
-        }
-    });
+                ]
+            }
+        });
+    }
+
+    catch(error) {
+
+        console.log(error);
+
+        res.json({
+
+            version: '2.0',
+
+            template: {
+
+                outputs: [
+
+                    {
+
+                        simpleText: {
+
+                            text:
+                            '서버 오류 발생'
+                        }
+                    }
+                ]
+            }
+        });
+    }
 });
 
 /*
 서버 실행
 */
-app.listen(3000, () => {
+const PORT =
+process.env.PORT || 3000;
 
-    console.log('서버 실행중');
+app.listen(PORT, () => {
+
+    console.log(
+
+        `서버 실행중 : ${PORT}`
+    );
 });
+```
+
