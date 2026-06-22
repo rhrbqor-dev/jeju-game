@@ -4,14 +4,23 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "body-parser": "^2.2.2",
+    "body-parser": "^2.3.0",
     "express": "^5.2.1"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhrbqor-dev/jeju-game.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rhrbqor-dev/jeju-game/issues"
+  },
+  "homepage": "https://github.com/rhrbqor-dev/jeju-game#readme"
 }

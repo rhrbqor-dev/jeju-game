@@ -86,16 +86,33 @@ app.post('/webhook', (req, res) => {
         else {
 
             users[userId].nickname = nickname;
-            users[userId].state = 'PLAYING';
+            users[userId].state = 'QUESTION_1';
             users[userId].startTime = Date.now();
 
             responseText =
-                nickname + '님 게임 시작!';
+    nickname + '님 게임 시작!\n\n' +
+    '1번 문제\n' +
+    '이곳은 제주를 지키던 환해장성입니다.\n' +
+    '돌담의 길이는 몇m일까요?';
         }
     }
-
     /*
-    3. 게임 종료
+3. 1번 문제 정답 처리
+*/
+else if (
+    users[userId] &&
+    users[userId].state === 'QUESTION_1' &&
+    message === '30m'
+) {
+
+    users[userId].state = 'PLAYING';
+
+    responseText =
+        '정답입니다!\n' +
+        '다음 미션을 진행하세요.';
+}
+    /*
+    4. 게임 종료
     */
     else if (message === '게임 종료') {
 
@@ -165,3 +182,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log('서버 실행중:', PORT);
 });
+
